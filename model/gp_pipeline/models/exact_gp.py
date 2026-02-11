@@ -140,8 +140,10 @@ class ExactGP(gpytorch.models.ExactGP):
         losses_train = []
         losses_valid = []
 
-        with gpytorch.settings.cg_tolerance(1e-2), \
-             gpytorch.settings.max_cg_iterations(100), \
+        n_train = self.x_train.shape[0]
+        with gpytorch.settings.max_cholesky_size(max(n_train + 1, 5000)), \
+             gpytorch.settings.cg_tolerance(1e-2), \
+             gpytorch.settings.max_cg_iterations(500), \
              gpytorch.settings.cholesky_jitter(jitter):
 
             for i in range(iters):
