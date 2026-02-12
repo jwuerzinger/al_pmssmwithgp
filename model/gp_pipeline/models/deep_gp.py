@@ -187,22 +187,29 @@ class DeepGP(gpytorch.models.deep_gps.DeepGP):
             output = self.output_layer(middle_rep)
         return output
 
-    def do_train_loop(self, lr=0.005, iters=1000, batch_size=512, jitter=1e-4):
-        '''Train the DeepGP Model'''
+    def do_train_loop(self, lr=0.005, iters=1000, batch_size=512, jitter=1e-4, patience=None):
+        '''Train the DeepGP Model
+
+        Args:
+            patience: Early stopping patience (number of iterations without
+                      validation loss improvement before stopping). None disables
+                      early stopping.
+        '''
         train_dataset = TensorDataset(self.x_train, self.y_train)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        
+
         mll = DeepApproximateMLL(VariationalELBO(self.likelihood, self, self.x_train.shape[-2]))
-        
+
         best_loss = 1e10
         best_model = None
         losses_train = []
         losses_valid = []
+        patience_counter = 0
 
         with gpytorch.settings.cholesky_jitter(jitter), gpytorch.settings.fast_pred_var(False):
-            
+
             for i in range(iters):
                 # Training
                 self.train()
@@ -214,7 +221,7 @@ class DeepGP(gpytorch.models.deep_gps.DeepGP):
                     optimizer.zero_grad()
                     with gpytorch.settings.num_likelihood_samples(self.num_samples):
                         output = self(x_batch)
-                        loss = -mll(output, y_batch)       
+                        loss = -mll(output, y_batch)
                     loss.backward()
                     optimizer.step()
                     epoch_loss += loss.item()
@@ -238,8 +245,14 @@ class DeepGP(gpytorch.models.deep_gps.DeepGP):
                 #Save best model
                 if loss_valid.item() < best_loss:
                     best_loss  = loss_valid.item()
-                    best_model = copy.deepcopy(self.state_dict()) 
-                
+                    best_model = copy.deepcopy(self.state_dict())
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience is not None and patience_counter >= patience:
+                        print(f"Early stopping triggered at iter {i}")
+                        break
+
                 if i % 100 == 0:
                     print(f"Iter {i}/{iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
 

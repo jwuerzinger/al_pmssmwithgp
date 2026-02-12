@@ -119,8 +119,14 @@ class ExactGP(gpytorch.models.ExactGP):
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
-    def do_train_loop(self, lr=0.005, iters=1000, optimizer="Adam", jitter=1e-5):
-        '''Train the ExactGP Model'''
+    def do_train_loop(self, lr=0.005, iters=1000, optimizer="Adam", jitter=1e-5, patience=None):
+        '''Train the ExactGP Model
+
+        Args:
+            patience: Early stopping patience (number of iterations without
+                      validation loss improvement before stopping). None disables
+                      early stopping.
+        '''
 
         if optimizer == "SGD":
             optimizer = torch.optim.SGD(self.parameters(), lr=lr, momentum=0)
@@ -139,6 +145,7 @@ class ExactGP(gpytorch.models.ExactGP):
         best_model = None
         losses_train = []
         losses_valid = []
+        patience_counter = 0
 
         n_train = self.x_train.shape[0]
         with gpytorch.settings.max_cholesky_size(max(n_train + 1, 5000)), \
@@ -154,12 +161,6 @@ class ExactGP(gpytorch.models.ExactGP):
                 output = self(self.x_train)
 
                 loss = -mll(output, self.y_train.view(-1))
-                #
-                # if self.epsilon == 0:
-                #     weights = 1
-                # else:
-                #     weights = torch.exp(-((self.y_train.view(-1) - self.thr) ** 2) / (2 * self.epsilon ** 2))
-                # loss = (-mll(output, self.y_train.view(-1)) * weights).mean()
 
                 loss.backward()
                 optimizer.step()
@@ -173,10 +174,16 @@ class ExactGP(gpytorch.models.ExactGP):
                     output_valid = self(self.x_valid)
                     loss_valid = -mll(output_valid, self.y_valid.view(-1))
                     losses_valid.append(loss_valid.item())
-                
-                if loss < best_loss:
-                    best_loss = loss.item()
+
+                if loss_valid.item() < best_loss:
+                    best_loss = loss_valid.item()
                     best_model = self.state_dict()
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience is not None and patience_counter >= patience:
+                        print(f"[INFO] Early stopping triggered at iter {i + 1}")
+                        break
 
                 if i % 100 == 0:
                     print(f"[INFO] Iter {i + 1}/{iters} - Loss (Train): {loss.item():.3f} - Loss (Val): {loss_valid.item():.3f}")

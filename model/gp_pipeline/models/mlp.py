@@ -45,8 +45,14 @@ class MLP(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-    def do_train_loop(self, lr=0.005, iters=1000, optimizer_type="Adam"):
-        '''Train the MLP model'''
+    def do_train_loop(self, lr=0.005, iters=1000, optimizer_type="Adam", patience=None):
+        '''Train the MLP model
+
+        Args:
+            patience: Early stopping patience (number of iterations without
+                      validation loss improvement before stopping). None disables
+                      early stopping.
+        '''
         print(f"[DEBUG] x_train shape: {self.x_train.shape}")
 
         train_dataset = TensorDataset(self.x_train, self.y_train)
@@ -65,7 +71,7 @@ class MLP(nn.Module):
         best_model = None
         losses_train = []
         losses_valid = []
-        patience, patience_counter = 20, 0
+        patience_counter = 0
 
         for i in range(iters):
             # Training
@@ -103,15 +109,15 @@ class MLP(nn.Module):
                 best_loss = loss_valid.item()
                 best_model = copy.deepcopy(self.state_dict())
                 patience_counter = 0
-            # else:
-            #     patience_counter += 1
-            #     if patience_counter >= patience:
-            #         print(f"Early stopping at epoch {i}")
-            #         break
-            
+            else:
+                patience_counter += 1
+                if patience is not None and patience_counter >= patience:
+                    print(f"Early stopping at epoch {i}")
+                    break
+
             if i % 100 == 0:
                 print(f"Iter {i}/{iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
-        
+
         if best_model is not None:
             self.load_state_dict(best_model)
 

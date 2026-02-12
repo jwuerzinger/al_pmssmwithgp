@@ -91,8 +91,14 @@ class SparseGP(gpytorch.models.ApproximateGP):
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
     
-    def do_train_loop(self, lr=0.005, iters=1000, batch_size=512, jitter=1e-4):        
-        '''Train the SparseGP Model'''
+    def do_train_loop(self, lr=0.005, iters=1000, batch_size=512, jitter=1e-4, patience=None):
+        '''Train the SparseGP Model
+
+        Args:
+            patience: Early stopping patience (number of iterations without
+                      validation loss improvement before stopping). None disables
+                      early stopping.
+        '''
         train_dataset = TensorDataset(self.x_train, self.y_train)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
@@ -104,7 +110,8 @@ class SparseGP(gpytorch.models.ApproximateGP):
         best_model = None
         losses_train = []
         losses_valid = []
-        
+        patience_counter = 0
+
         with gpytorch.settings.cholesky_jitter(jitter):
             for i in range(iters):
                 # Training
@@ -134,9 +141,15 @@ class SparseGP(gpytorch.models.ApproximateGP):
                     losses_valid.append(loss_valid.item())
 
                 # Save best model
-                    if loss_valid.item() < best_loss:
-                        best_loss  = loss_valid.item()
-                        best_model = copy.deepcopy(self.state_dict()) 
+                if loss_valid.item() < best_loss:
+                    best_loss = loss_valid.item()
+                    best_model = copy.deepcopy(self.state_dict())
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience is not None and patience_counter >= patience:
+                        print(f"Early stopping triggered at iter {i}")
+                        break
 
                 if i % 100 == 0:
                     print(f"Iter {i} / {iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
