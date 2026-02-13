@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import torch
 import gpytorch
@@ -5,6 +6,8 @@ from scipy.stats import qmc
 
 
 import math
+
+logger = logging.getLogger(__name__)
 
 class EntropySelectionStrategy:
     '''Class for Active Learning Selection (by Irina) or random selection'''
@@ -109,7 +112,7 @@ class EntropySelectionStrategy:
             batch_size = 100_000
             means, vars = [], []
 
-            print("Initial Pool selection")
+            logger.info("Initial Pool selection")
             for i in range(0, len(x_large), batch_size):
                 x_batch = x_large[i:i+batch_size]
                 with torch.no_grad(), \
@@ -150,7 +153,7 @@ class EntropySelectionStrategy:
                     x_pool = candidates[idx]
                 else:
                     x_pool = candidates
-                    print("[INFO] Candidates selected")
+                    logger.info("Candidates selected")
                 #x_pool = x_large[mask]
         else:
             x_pool = torch.tensor(
@@ -166,7 +169,7 @@ class EntropySelectionStrategy:
             model.eval()
             likelihood.eval()
 
-        print("[INFO] Focused pool selection")
+        logger.info("Focused pool selection")
         # Calculate gp-mean and covariance out of the pool
         with torch.no_grad(), \
             gpytorch.settings.eval_cg_tolerance(1e-4), \
@@ -191,15 +194,15 @@ class EntropySelectionStrategy:
         score_function = self.smoothed_batch_entropy(blur=self.blur, device=device)
         choice_function = lambda score, indices: self.gibbs_sample(score, self.beta, device)
 
-        print("[DEBUG] Choice done")
+        logger.debug("Choice done")
 
         selected_indices = self.iterative_batch_selector(score_function, choice_function, mean - thr, covar, N, device)
 
         # Extract means und covariances of the selected points
         sel_mean = mean[selected_indices]                
         sel_covar = covar[selected_indices][:, selected_indices] 
-        print("[INFO] Mean of the selected points:", sel_mean)
-        print("[INFO] Coveriance of the selected points:", sel_covar)
+        logger.info(f"Mean of the selected points: {sel_mean}")
+        logger.info(f"Covariance of the selected points: {sel_covar}")
         
         # Calculate the entropy per point
         per_point_entropy = []
@@ -208,7 +211,7 @@ class EntropySelectionStrategy:
             c1 = sel_covar[i, i].view(1, 1, 1)     
             s1 = score_function(m1, c1).item()
             per_point_entropy.append(s1)
-        print("[INFO] Entropy of the selected points:", per_point_entropy)
+        logger.info(f"Entropy of the selected points: {per_point_entropy}")
 
         return x_pool[list(selected_indices)]
 

@@ -1,6 +1,9 @@
+import logging
 import numpy as np
 import copy
 import torch
+
+logger = logging.getLogger(__name__)
 
 import torch.nn as nn
 import torch.optim as optim
@@ -53,7 +56,7 @@ class MLP(nn.Module):
                       validation loss improvement before stopping). None disables
                       early stopping.
         '''
-        print(f"[DEBUG] x_train shape: {self.x_train.shape}")
+        logger.debug(f"x_train shape: {self.x_train.shape}")
 
         train_dataset = TensorDataset(self.x_train, self.y_train)
         valid_dataset = TensorDataset(self.x_valid, self.y_valid)
@@ -112,11 +115,11 @@ class MLP(nn.Module):
             else:
                 patience_counter += 1
                 if patience is not None and patience_counter >= patience:
-                    print(f"Early stopping at epoch {i}")
+                    logger.info(f"Early stopping at epoch {i}")
                     break
 
             if i % 100 == 0:
-                print(f"Iter {i}/{iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
+                logger.info(f"Iter {i}/{iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
 
         if best_model is not None:
             self.load_state_dict(best_model)

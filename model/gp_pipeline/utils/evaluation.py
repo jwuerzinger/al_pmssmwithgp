@@ -1,8 +1,11 @@
+import logging
 import torch
 import os
 import numpy as np
 import gpytorch
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 def compute_accuracy(predictions, truths, threshold):
     '''Function to compute the accuracy and the confusion matrix'''
@@ -109,7 +112,7 @@ def misclassified(predictions, truths, thr):
     fp_idx = torch.where(FP)[0]
     fn_idx = torch.where(FN)[0]
     idx = torch.cat([fp_idx, fn_idx]) 
-    print(f"idx: {idx}")
+    logger.debug(f"idx: {idx}")
 
     return idx
 

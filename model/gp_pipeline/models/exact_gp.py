@@ -1,8 +1,11 @@
+import logging
 import gpytorch
 import torch
 import numpy as np
 import copy
 import torch.nn as nn
+
+logger = logging.getLogger(__name__)
 from gpytorch.kernels import RBFKernel, MaternKernel, RQKernel, ScaleKernel, SpectralMixtureKernel
 from gpytorch.priors import GammaPrior
 from gp_pipeline.models.linearMean import LinearMean  
@@ -88,16 +91,16 @@ class ExactGP(gpytorch.models.ExactGP):
         set_lengthscale(self.covar_module.base_kernel, lengthscale)
         
         if hasattr(self.covar_module.base_kernel, "lengthscale") and self.covar_module.base_kernel.lengthscale is not None:
-            print("[INFO] Lengthscales per dimension:", self.covar_module.base_kernel.lengthscale.detach().cpu().numpy())
+            logger.info(f"Lengthscales per dimension: {self.covar_module.base_kernel.lengthscale.detach().cpu().numpy()}")
         else:
-            print(f"[INFO] Kernel {type(self.covar_module.base_kernel).__name__} has no lengthscale.")
+            logger.info(f"Kernel {type(self.covar_module.base_kernel).__name__} has no lengthscale.")
 
         # === NOISE ===
         self.likelihood.noise = noise
         try:
-            print("[INFO] Noise level:", self.likelihood.noise.item())
+            logger.info(f"Noise level: {self.likelihood.noise.item()}")
         except:
-            print("[INFO] Noise level (via noise_covar):", self.likelihood.noise_covar.noise.item())
+            logger.info(f"Noise level (via noise_covar): {self.likelihood.noise_covar.noise.item()}")
 
         self.to(self.device)
 
@@ -182,13 +185,13 @@ class ExactGP(gpytorch.models.ExactGP):
                 else:
                     patience_counter += 1
                     if patience is not None and patience_counter >= patience:
-                        print(f"[INFO] Early stopping triggered at iter {i + 1}")
+                        logger.info(f"Early stopping triggered at iter {i + 1}")
                         break
 
                 if i % 100 == 0:
-                    print(f"[INFO] Iter {i + 1}/{iters} - Loss (Train): {loss.item():.3f} - Loss (Val): {loss_valid.item():.3f}")
+                    logger.info(f"Iter {i + 1}/{iters} - Loss (Train): {loss.item():.3f} - Loss (Val): {loss_valid.item():.3f}")
                     if self.covar_module.base_kernel.lengthscale is not None:
-                        print(f"[INFO] Lengthscales: {self.covar_module.base_kernel.lengthscale.detach().cpu().numpy()}")
+                        logger.info(f"Lengthscales: {self.covar_module.base_kernel.lengthscale.detach().cpu().numpy()}")
 
         if best_model is not None:
             self.load_state_dict(best_model)

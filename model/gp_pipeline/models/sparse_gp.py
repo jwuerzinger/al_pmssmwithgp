@@ -1,7 +1,10 @@
+import logging
 import gpytorch
 import torch
 import numpy as np
 import copy
+
+logger = logging.getLogger(__name__)
 
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.variational import VariationalStrategy, CholeskyVariationalDistribution
@@ -28,8 +31,8 @@ class SparseGP(gpytorch.models.ApproximateGP):
 
         # === INDUCING POINTS ===
         num_inducing = min(int(0.5 * len(x_train)), num_inducing_max)
-        print(f"[INFO] Number of Inducing Points: {num_inducing}")
-        print(f"[INFO] X_train shape: {x_train.shape}")
+        logger.info(f"Number of Inducing Points: {num_inducing}")
+        logger.info(f"X_train shape: {x_train.shape}")
 
         # Inducing Points first part of the training data
         if inducing_strategy == 'vanilla':
@@ -148,11 +151,11 @@ class SparseGP(gpytorch.models.ApproximateGP):
                 else:
                     patience_counter += 1
                     if patience is not None and patience_counter >= patience:
-                        print(f"Early stopping triggered at iter {i}")
+                        logger.info(f"Early stopping triggered at iter {i}")
                         break
 
                 if i % 100 == 0:
-                    print(f"Iter {i} / {iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
+                    logger.info(f"Iter {i} / {iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
 
         if best_model is not None:
             self.load_state_dict(best_model)
