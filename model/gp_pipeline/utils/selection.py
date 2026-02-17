@@ -50,10 +50,12 @@ class EntropySelectionStrategy:
         return lambda mean, cov: self.approximate_batch_entropy(mean + blur * torch.sign(mean).to(device), cov, device)
 
     def iterative_batch_selector(self, score_function, choice_function, gp_mean, gp_covar, N, device):
-        '''Chooses the next points iterativley. The point with maximum entropy is always chosen first, 
+        '''Chooses the next points iterativley. The point with maximum entropy is always chosen first,
             then the next indices are selected with the choice function - gibbs_sampling or best_not_yet_chosen
             The covariance matrix and the mean vector are updated iterativly, based on the already chosen points
         '''
+        import logging
+        logger = logging.getLogger(__name__)
 
         score = score_function(gp_mean[:, None], torch.diag(gp_covar)[:, None, None]).to(device)
         first_index = torch.argmax(score).to(device)
@@ -61,7 +63,13 @@ class EntropySelectionStrategy:
 
         num_pts = len(gp_mean)
 
-        for _ in range(N - 1):
+        logger.info(f"Iterative batch selector: selecting {N} points from {num_pts} candidates")
+
+        for iteration in range(N - 1):
+            # Log progress at 0%, 25%, 50%, 75%, 99% milestones only
+            # if iteration in [0, N//4, N//2, 3*N//4, N-2]:
+            if iteration % 10 == 0:
+                logger.info(f"Selection progress: {iteration+1}/{N-1} points ({100*(iteration+1)/(N-1):.1f}%)")
             center_cov = torch.stack([gp_covar[indices, :][:, indices]] * num_pts).to(device)
             side_cov = gp_covar[:, None, indices].to(device)
             bottom_cov = gp_covar[:, indices, None].to(device)
@@ -80,6 +88,7 @@ class EntropySelectionStrategy:
             next_index = choice_function(score, indices)
             indices.append(int(next_index))
 
+        logger.info(f"Iterative batch selector complete: selected {len(indices)} points")
         return indices
 
 
