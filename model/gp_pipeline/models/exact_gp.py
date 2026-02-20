@@ -180,7 +180,7 @@ class ExactGP(gpytorch.models.ExactGP):
 
                 if loss_valid.item() < best_loss:
                     best_loss = loss_valid.item()
-                    best_model = self.state_dict()
+                    best_model = {k: v.clone() for k, v in self.state_dict().items()}
                     patience_counter = 0
                 else:
                     patience_counter += 1
