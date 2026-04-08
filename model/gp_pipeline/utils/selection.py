@@ -65,26 +65,47 @@ class EntropySelectionStrategy:
 
         logger.info(f"Iterative batch selector: selecting {N} points from {num_pts} candidates")
 
+        # Pre-compute diagonal and keep gp_mean/gp_covar on CPU to save GPU memory.
+        # Process candidates in chunks to avoid OOM when num_pts × len(indices) is large.
+        gp_diag = torch.diag(gp_covar)  # (num_pts,)
+        chunk_size = max(256, 50_000 // max(N, 1))  # scale chunks down as batch grows
+
         for iteration in range(N - 1):
-            # Log progress at 0%, 25%, 50%, 75%, 99% milestones only
-            # if iteration in [0, N//4, N//2, 3*N//4, N-2]:
             if iteration % 10 == 0:
                 logger.info(f"Selection progress: {iteration+1}/{N-1} points ({100*(iteration+1)/(N-1):.1f}%)")
-            center_cov = torch.stack([gp_covar[indices, :][:, indices]] * num_pts).to(device)
-            side_cov = gp_covar[:, None, indices].to(device)
-            bottom_cov = gp_covar[:, indices, None].to(device)
-            end_cov = torch.diag(gp_covar)[:, None, None].to(device)
 
-            cov_batch = torch.cat([
-                torch.cat([center_cov, side_cov], axis=1),
-                torch.cat([bottom_cov, end_cov], axis=1),
-            ], axis=2)
+            # Shared across all candidates (small: k×k where k = len(indices))
+            center_cov_cpu = gp_covar[indices, :][:, indices]  # (k, k)
+            center_mean_cpu = gp_mean[indices]  # (k,)
 
-            center_mean = torch.stack([gp_mean[indices]] * num_pts).to(device)
-            new_mean = gp_mean[:, None].to(device)
-            mean_batch = torch.cat([center_mean, new_mean], axis=1)
+            # Score all candidates in chunks to bound GPU memory
+            score_chunks = []
+            for start in range(0, num_pts, chunk_size):
+                end = min(start + chunk_size, num_pts)
+                cs = end - start
 
-            score = score_function(mean_batch, cov_batch).to(device)
+                # Build (cs, k+1, k+1) covariance block matrix
+                cc = center_cov_cpu.unsqueeze(0).expand(cs, -1, -1).to(device)
+                sc = gp_covar[start:end, None, indices].to(device)  # (cs, 1, k)
+                bc = gp_covar[start:end, indices, None].to(device)  # (cs, k, 1)
+                ec = gp_diag[start:end, None, None].to(device)      # (cs, 1, 1)
+
+                cov_batch = torch.cat([
+                    torch.cat([cc, sc], dim=1),
+                    torch.cat([bc, ec], dim=1),
+                ], dim=2)
+
+                # Build (cs, k+1) mean vector
+                cm = center_mean_cpu.unsqueeze(0).expand(cs, -1).to(device)
+                nm = gp_mean[start:end, None].to(device)
+                mean_batch = torch.cat([cm, nm], dim=1)
+
+                score_chunks.append(score_function(mean_batch, cov_batch).cpu())
+
+                # Free GPU memory between chunks
+                del cc, sc, bc, ec, cov_batch, cm, nm, mean_batch
+
+            score = torch.cat(score_chunks, dim=0).to(device)
             next_index = choice_function(score, indices)
             indices.append(int(next_index))
 
