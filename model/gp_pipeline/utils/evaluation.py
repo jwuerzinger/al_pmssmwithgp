@@ -169,7 +169,7 @@ def evaluate_and_log(self, cfg, name, output_dir):
         gpytorch.settings.max_cg_iterations(300), \
         gpytorch.settings.fast_pred_var(False), \
         gpytorch.settings.fast_pred_samples(True), \
-        gpytorch.settings.cholesky_jitter(float=self.jitter, double=self.jitter), \
+        gpytorch.settings.cholesky_jitter(float_value=self.jitter, double_value=self.jitter), \
         gpytorch.settings.num_likelihood_samples(num_samples):
         preds = self.likelihood(self.model(x_eval))
     

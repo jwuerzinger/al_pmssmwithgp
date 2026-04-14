@@ -154,7 +154,7 @@ class ExactGP(gpytorch.models.ExactGP):
         with gpytorch.settings.max_cholesky_size(max(n_train + 1, 5000)), \
              gpytorch.settings.cg_tolerance(1e-2), \
              gpytorch.settings.max_cg_iterations(500), \
-             gpytorch.settings.cholesky_jitter(float=jitter, double=jitter):
+             gpytorch.settings.cholesky_jitter(float_value=jitter, double_value=jitter):
 
             for i in range(iters):
                 # Training
