@@ -150,7 +150,7 @@ class EntropySelectionStrategy:
                     gpytorch.settings.max_cg_iterations(300), \
                     gpytorch.settings.fast_pred_var(False), \
                     gpytorch.settings.fast_pred_samples(True), \
-                    gpytorch.settings.cholesky_jitter(pipeline.jitter), \
+                    gpytorch.settings.cholesky_jitter(float=pipeline.jitter, double=pipeline.jitter), \
                     gpytorch.settings.num_likelihood_samples(num_samples):
 
                     preds = likelihood(model(x_batch))
@@ -206,7 +206,7 @@ class EntropySelectionStrategy:
             gpytorch.settings.max_cg_iterations(300), \
             gpytorch.settings.fast_pred_var(False), \
             gpytorch.settings.fast_pred_samples(True), \
-            gpytorch.settings.cholesky_jitter(pipeline.jitter), \
+            gpytorch.settings.cholesky_jitter(float=pipeline.jitter, double=pipeline.jitter), \
             gpytorch.settings.num_likelihood_samples(num_samples):
 
             preds_focus = likelihood(model(x_pool))

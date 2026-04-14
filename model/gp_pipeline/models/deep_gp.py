@@ -211,7 +211,7 @@ class DeepGP(gpytorch.models.deep_gps.DeepGP):
         losses_valid = []
         patience_counter = 0
 
-        with gpytorch.settings.cholesky_jitter(jitter), gpytorch.settings.fast_pred_var(False):
+        with gpytorch.settings.cholesky_jitter(float=jitter, double=jitter), gpytorch.settings.fast_pred_var(False):
 
             for i in range(iters):
                 # Training

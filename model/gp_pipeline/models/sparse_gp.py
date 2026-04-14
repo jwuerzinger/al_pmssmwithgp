@@ -115,7 +115,7 @@ class SparseGP(gpytorch.models.ApproximateGP):
         losses_valid = []
         patience_counter = 0
 
-        with gpytorch.settings.cholesky_jitter(jitter):
+        with gpytorch.settings.cholesky_jitter(float=jitter, double=jitter):
             for i in range(iters):
                 # Training
                 self.train()
