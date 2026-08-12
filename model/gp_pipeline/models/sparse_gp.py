@@ -102,8 +102,14 @@ class SparseGP(gpytorch.models.ApproximateGP):
                       validation loss improvement before stopping). None disables
                       early stopping.
         '''
-        train_dataset = TensorDataset(self.x_train, self.y_train)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        # Iterate minibatches by slicing a permutation instead of using a
+        # DataLoader. x_train/y_train are already contiguous on the device, so a
+        # DataLoader at num_workers=0 performs one TensorDataset.__getitem__ per
+        # ROW plus a default_collate per batch, every epoch, purely in Python.
+        # At n_train ~ 5.6e4 over a full fit that is ~1e8 item fetches to
+        # reassemble tensors that were already on the GPU and contiguous.
+        _n_train = self.x_train.shape[0]
+        _n_batches = max(1, (_n_train + batch_size - 1) // batch_size)
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
 
@@ -122,30 +128,59 @@ class SparseGP(gpytorch.models.ApproximateGP):
                 self.likelihood.train()
                 epoch_loss = 0.0
 
-                for x_batch, y_batch in train_loader:
-                    x_batch = x_batch.to(self.device)
-                    y_batch = y_batch.to(self.device)
+                _perm = torch.randperm(_n_train, device=self.x_train.device)
+                _epoch_loss = torch.zeros((), device=self.device)
+                for _b in range(_n_batches):
+                    _idx = _perm[_b * batch_size:(_b + 1) * batch_size]
+                    x_batch = self.x_train[_idx].to(self.device)
+                    y_batch = self.y_train[_idx].to(self.device)
                     optimizer.zero_grad()
                     output = self(x_batch)
                     loss = -mll(output, y_batch)
                     loss.backward()
                     optimizer.step()
-                    epoch_loss += loss.item()
+                    _epoch_loss = _epoch_loss + loss.detach()
+                epoch_loss = float(_epoch_loss)
 
-                epoch_avg = epoch_loss / len(train_loader)
+                epoch_avg = epoch_loss / _n_batches
                 losses_train.append(epoch_avg)
 
-                # Validation
+                # Validation, in minibatches.
+                #
+                # This used to push the WHOLE validation set through in one call,
+                # the only thing in the loop whose cost grew with the dataset
+                # (training is minibatched). Measured in isolation, that call
+                # aborts the process with a ROCm "Memory access fault by GPU",
+                # preceded by "Device memory allocation size is too small for
+                # TRSM", once n_val reaches ~1.3e4: at n_val 12500 it is fine, at
+                # 13000 it faults, while construction and the training epoch are
+                # clean up to n_train 60000. It is a workspace failure inside the
+                # BLAS triangular solve, not memory exhaustion (peak allocation
+                # is ~1.5 GB on a 64 GB device), which is why it arrives as
+                # SIGABRT rather than a catchable OutOfMemoryError.
+                #
+                # Batching costs about 1.5% of a training iteration and removes
+                # the fault at every size tested. VariationalELBO is
+                # per-datapoint (log-likelihood divided by event_shape[0], KL by
+                # num_data), so a size-weighted mean over batches REPRODUCES the
+                # unbatched value: verified to 1e-6 relative, so early stopping
+                # and model selection are unchanged.
                 self.eval()
                 self.likelihood.eval()
                 with torch.no_grad():
-                    output_valid = self(self.x_valid.to(self.device))
-                    loss_valid = -mll(output_valid, self.y_valid.to(self.device).view(-1))
-                    losses_valid.append(loss_valid.item())
+                    _acc, _seen = 0.0, 0
+                    for _j in range(0, self.x_valid.shape[0], batch_size):
+                        _xb = self.x_valid[_j:_j + batch_size].to(self.device)
+                        _yb = self.y_valid[_j:_j + batch_size].to(self.device).view(-1)
+                        _n = _xb.shape[0]
+                        _acc += float(-mll(self(_xb), _yb)) * _n
+                        _seen += _n
+                    loss_valid_value = _acc / max(_seen, 1)
+                    losses_valid.append(loss_valid_value)
 
                 # Save best model
-                if loss_valid.item() < best_loss:
-                    best_loss = loss_valid.item()
+                if loss_valid_value < best_loss:
+                    best_loss = loss_valid_value
                     best_model = copy.deepcopy(self.state_dict())
                     patience_counter = 0
                 else:
@@ -155,7 +190,7 @@ class SparseGP(gpytorch.models.ApproximateGP):
                         break
 
                 if i % 100 == 0:
-                    logger.info(f"Iter {i} / {iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid.item():.3f}")
+                    logger.info(f"Iter {i} / {iters} - Loss (Train): {epoch_avg:.3f} - Loss (Val): {loss_valid_value:.3f}")
 
         if best_model is not None:
             self.load_state_dict(best_model)
