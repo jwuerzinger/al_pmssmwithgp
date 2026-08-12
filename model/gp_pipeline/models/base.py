@@ -241,10 +241,17 @@ class GPModelPipeline:
             valid_root_file_path = f"/u/{USER}/al_pmssmwithgp/model/pmssm_data/EWKino.csv"
 
 
+        # Parsed once and shared. The dummy-train branch below reads the
+        # *validation* file, which the x_all/y_all block further down then read
+        # again from the same path: without this, the same ROOT file is parsed
+        # twice on every AL iteration for no gain, since neither frame is
+        # mutated afterwards (only .values is read off them).
+        valid_df = self._load_filtered_df(valid_root_file_path)
+
         # Only initialize, if iteration greater than 1, because training data is loaded
         if self.iteration > 1 and not not_active:
-            # Dummy train set 
-            train_df = self._load_filtered_df(valid_root_file_path)  
+            # Dummy train set
+            train_df = valid_df
             self.x_train = torch.empty((0, self.n_dim), dtype=torch.float32).to(self.device)
             self.y_train = torch.empty((0,), dtype=torch.float32).to(self.device)
         else:
@@ -261,8 +268,7 @@ class GPModelPipeline:
             if self.y_norm:
                 self.y_train = self.scaler_y.fit_transform(self.y_train.reshape(-1, 1)).squeeze()
 
-        # Load validation data always from scan_start
-        valid_df = self._load_filtered_df(valid_root_file_path)
+        # Load validation data always from scan_start (parsed above)
         self.x_valid = torch.stack([torch.tensor(valid_df[param].values[-self.valid_points:], dtype=torch.float32) for param in self.selected_columns], dim=1).to(self.device)
         if self.target == "CLs":
             self.y_valid = torch.tensor(valid_df[f'{self.target}'].values[-self.valid_points:], dtype=torch.float32).to(self.device)
