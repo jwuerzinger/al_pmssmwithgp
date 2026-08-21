@@ -6,7 +6,7 @@ import copy
 
 logger = logging.getLogger(__name__)
 
-from gpytorch.likelihoods import GaussianLikelihood
+from gpytorch.likelihoods import BernoulliLikelihood, GaussianLikelihood
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.variational import VariationalStrategy, CholeskyVariationalDistribution
 from gpytorch.means import ConstantMean, LinearMean
@@ -69,7 +69,7 @@ class DeepGPHiddenLayer(gpytorch.models.deep_gps.DeepGPLayer):
 class DeepGP(gpytorch.models.deep_gps.DeepGP):
     def __init__(self, x_train, y_train, x_valid, y_valid, n_dim, lengthscale, noise, num_hidden_dims=10, 
                  num_middle_dims=0, num_inducing_max=256, inducing_strategy='kmeans', thr=0, kernel='RBF', 
-                 m_nu=1.5, num_samples=8, seed=42):
+                 m_nu=1.5, num_samples=8, seed=42, likelihood="gaussian"):
         super().__init__()
 
         self.seed = seed
@@ -150,9 +150,21 @@ class DeepGP(gpytorch.models.deep_gps.DeepGP):
                 m_nu=m_nu
             )
 
-        # === NOISE ===
-        self.likelihood = GaussianLikelihood()
-        self.likelihood.noise = noise
+        # === NOISE / OBSERVATION MODEL ===
+        # A Bernoulli likelihood turns this into a proper GP classifier of the
+        # verdict. It costs nothing here because the model is already
+        # variational: VariationalELBO handles any likelihood, so the inference
+        # scheme is unchanged and only the observation model differs. The same
+        # swap is impossible for the exact GP, which needs conjugacy.
+        self.likelihood_kind = str(likelihood).lower()
+        if self.likelihood_kind == "bernoulli":
+            self.likelihood = BernoulliLikelihood()
+        elif self.likelihood_kind == "gaussian":
+            self.likelihood = GaussianLikelihood()
+            self.likelihood.noise = noise
+        else:
+            raise ValueError(f"unknown likelihood {likelihood!r}; "
+                             "expected 'gaussian' or 'bernoulli'")
 
         # === LENGTHSCALES ===
         def set_lengthscales(layer, lengthscale):
